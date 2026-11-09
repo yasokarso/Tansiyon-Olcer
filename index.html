@@ -54,7 +54,8 @@ function draw(){
 function onMotion(e){
  if(!recording)return;
  const ts=performance.now();const a=e.accelerationIncludingGravity||e.acceleration||{};
- rows.push({timestamp_ms:Math.round(ts-t0),x:a.x??'',y:a.y??'',z:a.z??'',rotation_alpha:e.rotationRate?.alpha??'',rotation_beta:e.rotationRate?.beta??'',rotation_gamma:e.rotationRate?.gamma??'});
+ rows.push({timestamp_ms:Math.round(ts-t0),x:a.x??'',y:a.y??'',z:a.z??'',rotation_alpha:e.rotationRate?.alpha??'',rotation_beta:e.rotationRate?.beta??'',rotation_gamma:e.rotationRate?.gamma??''
+});
  $('count').textContent=rows.length;
  $('elapsed').textContent=((ts-t0)/1000).toFixed(1)+' s';
  if(rows.length>1){const rate=(rows.length-1)/((ts-t0)/1000);$('rate').textContent=rate.toFixed(1)+' Hz';$('rate').dataset.rate=rate}
