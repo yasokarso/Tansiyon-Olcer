@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101827">
+<title>Cuffless BP — Motion Recorder</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#101827;color:#eef3fb;font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:22px;max-width:760px;margin:auto}
+h1{font-size:25px;margin:8px 0}p{line-height:1.5;color:#c5d0df}.card{background:#1b293b;border:1px solid #30435d;border-radius:16px;padding:17px;margin:15px 0}
+button{border:0;border-radius:12px;padding:14px 18px;font-size:16px;font-weight:650;background:#7dd3fc;color:#082033;margin:5px 5px 5px 0}button.secondary{background:#34465d;color:#fff}button:disabled{opacity:.45}
+.stat{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #34465d}.stat:last-child{border:0}canvas{width:100%;height:180px;background:#0b1320;border-radius:10px}
+small{color:#a9b8ca}.warning{border-left:4px solid #fbbf24;padding-left:12px}
+</style>
+</head>
+<body>
+<h1>Cuffless BP — Motion Recorder</h1>
+<p>iPhone ivmeölçer deneme aracı. Bu sayfa tansiyon ölçmez; yalnızca ham hareket verisi toplar.</p>
+<div class="card">
+ <h3>1. Hazırlık</h3>
+ <p>Oturur pozisyonda 5 dakika dinlen. Telefonu kılıfıyla birlikte göğüs kemiğinin üstüne hafifçe temas ettir; bastırma. Kayıt boyunca olabildiğince sabit kal.</p>
+ <button id="permission">Hareket sensörü iznini ver</button>
+ <button id="start" disabled>Kaydı başlat</button>
+ <button id="stop" class="secondary" disabled>Kaydı durdur</button>
+ <button id="download" class="secondary" disabled>CSV indir</button>
+</div>
+<div class="card">
+ <div class="stat"><span>Durum</span><strong id="status">İzin bekleniyor</strong></div>
+ <div class="stat"><span>Örnek sayısı</span><strong id="count">0</strong></div>
+ <div class="stat"><span>Geçen süre</span><strong id="elapsed">0.0 s</strong></div>
+ <div class="stat"><span>Tahmini örnekleme hızı</span><strong id="rate">—</strong></div>
+</div>
+<div class="card">
+ <h3>İvme sinyali (m/s²)</h3>
+ <canvas id="plot" width="700" height="180"></canvas>
+ <small>X, Y ve Z eksenleri — son yaklaşık 8 saniye</small>
+</div>
+<div class="card warning">
+ <strong>Bilimsel ve güvenlik notu</strong>
+ <p>Bu prototip araştırma amaçlı ham sinyal kaydı içindir. Nabız veya tansiyon sonucu üretmez. Tansiyon, kalp hızıyla aynı şey değildir. Klinik karar, ilaç veya tedavi değişikliği için kullanma.</p>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+let rows=[],recording=false,t0=0,lastTs=null,permission=false,raf=null;
+const canvas=$('plot'),ctx=canvas.getContext('2d');
+function draw(){
+ ctx.clearRect(0,0,canvas.width,canvas.height);ctx.strokeStyle='#34465d';ctx.lineWidth=1;
+ for(let i=1;i<4;i++){ctx.beginPath();ctx.moveTo(0,i*45);ctx.lineTo(700,i*45);ctx.stroke()}
+ const recent=rows.slice(-Math.max(2,Math.floor((Number($('rate').dataset.rate)||25)*8)));
+ const colors=['#7dd3fc','#a7f3d0','#fca5a5'];
+ [0,1,2].forEach((axis)=>{ctx.beginPath();ctx.strokeStyle=colors[axis];ctx.lineWidth=2;
+ recent.forEach((r,i)=>{const v=Number(r[['x','y','z'][axis]])||0;const x=i/Math.max(1,recent.length-1)*700;const y=90-v*7;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke()});
+}
+function onMotion(e){
+ if(!recording)return;
+ const ts=performance.now();const a=e.accelerationIncludingGravity||e.acceleration||{};
+ rows.push({timestamp_ms:Math.round(ts-t0),x:a.x??'',y:a.y??'',z:a.z??'',rotation_alpha:e.rotationRate?.alpha??'',rotation_beta:e.rotationRate?.beta??'',rotation_gamma:e.rotationRate?.gamma??'});
+ $('count').textContent=rows.length;
+ $('elapsed').textContent=((ts-t0)/1000).toFixed(1)+' s';
+ if(rows.length>1){const rate=(rows.length-1)/((ts-t0)/1000);$('rate').textContent=rate.toFixed(1)+' Hz';$('rate').dataset.rate=rate}
+ if(ts-lastTs>100){draw();lastTs=ts}
+}
+$('permission').onclick=async()=>{
+ try{
+  if(typeof DeviceMotionEvent==='undefined'){throw new Error('Bu tarayıcı hareket sensörü API’sini desteklemiyor. iPhone Safari kullan.')}
+  if(typeof DeviceMotionEvent.requestPermission==='function'){
+   const result=await DeviceMotionEvent.requestPermission();
+   if(result!=='granted')throw new Error('Hareket sensörü izni verilmedi.')
+  }
+  permission=true;$('status').textContent='İzin verildi';$('start').disabled=false;
+ }catch(err){$('status').textContent=err.message;alert(err.message)}
+};
+$('start').onclick=()=>{
+ if(!permission)return;rows=[];recording=true;t0=performance.now();lastTs=0;
+ window.addEventListener('devicemotion',onMotion,true);
+ $('status').textContent='Kayıt yapılıyor';$('start').disabled=true;$('stop').disabled=false;$('download').disabled=true;
+};
+$('stop').onclick=()=>{
+ recording=false;window.removeEventListener('devicemotion',onMotion,true);
+ $('status').textContent='Kayıt tamamlandı';$('start').disabled=false;$('stop').disabled=true;$('download').disabled=rows.length===0;draw();
+};
+$('download').onclick=()=>{
+ const header='timestamp_ms,x_m_s2,y_m_s2,z_m_s2,rotation_alpha,rotation_beta,rotation_gamma';
+ const csv=[header,...rows.map(r=>[r.timestamp_ms,r.x,r.y,r.z,r.rotation_alpha,r.rotation_beta,r.rotation_gamma].join(','))].join('\n');
+ const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob);
+ const a=document.createElement('a');a.href=url;a.download='cuffless_bp_motion_'+new Date().toISOString().replace(/[:.]/g,'-')+'.csv';a.click();URL.revokeObjectURL(url);
+};
+</script>
+</body></html>
